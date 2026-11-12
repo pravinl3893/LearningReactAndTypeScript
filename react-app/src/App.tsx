@@ -1,47 +1,130 @@
-import { useState } from "react";
-import Form from "./components/Form";
-import ExpenseList from "./components/expense-tracker/components/ExpenseList";
-import ExpenseFilter from "./components/expense-tracker/components/ExpenseFilter";
-import ExpenseForm from "./components/expense-tracker/components/ExpenseForm";
-import categories from "./components/expense-tracker/Categories";
+import { useEffect, useState } from "react";
+import apiClient, { CanceledError } from "./services/api-client";
+
+interface User {
+  id: number;
+  name: string;
+}
 
 function App() {
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [expenses, setExpenses] = useState([
-    { id: 1, description: "Groceries", amount: 100, category: "Food" },
-    { id: 2, description: "Gas", amount: 50, category: "Food" },
-    { id: 3, description: "Gas", amount: 50, category: "Utilities" },
-    { id: 4, description: "Gas", amount: 50, category: "Utilities" },
-  ]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [error, setError] = useState("");
+  const [isLoading, setLoading] = useState(false);
 
-  const filteredExpenses = selectedCategory
-    ? expenses.filter((expense) => expense.category === selectedCategory)
-    : expenses;
+  useEffect(() => {
+    const controller = new AbortController();
+
+    setLoading(true);
+    apiClient
+      .get<User[]>("/users", { signal: controller.signal })
+      .then((response) => {
+        console.log("Fetched users:", response.data[0].name);
+        setUsers(response.data);
+      })
+      .catch((error) => {
+        if (error instanceof CanceledError) return;
+        setError("Error fetching users: " + error.message);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
+  const addUser = () => {
+    const newUser: User = {
+      id: users.length + 1,
+      name: `New User ${users.length + 1}`,
+    };
+
+    setLoading(true);
+    apiClient
+      .post("/users", newUser)
+      .then(({ data: savedUser }) => {
+        console.log("User added:", savedUser.name);
+        setUsers([...users, savedUser]);
+      })
+      .catch((error) => {
+        setError("Error adding user: " + error.message);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
+  const deleteUser = (user: User) => {
+    setLoading(true);
+    apiClient
+      .delete(`/users/${user.id}`)
+      .then(() => {
+        setUsers(users.filter((u) => u.id !== user.id));
+      })
+      .catch((error) => {
+        setError("Error deleting user: " + error.message);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
+  const updateCurrentUser = (user: User) => {
+    const updatedUser: User = { ...user, name: user.name + " (Updated)" };
+
+    setLoading(true);
+    apiClient
+      .patch(`/users/${user.id}`, updatedUser)
+      .then(({ data: savedUser }) => {
+        setUsers(users.map((u) => (u.id === user.id ? savedUser : u)));
+      })
+      .catch((error) => {
+        setError("Error updating user: " + error.message);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
 
   return (
     <div>
-      <div className="mb-3">
-        <ExpenseForm
-          onSubmit={(expense) => {
-            setExpenses([...expenses, { ...expense, id: expenses.length + 1 }]);
-          }}
-        />
-      </div>
+      {error && <p className="text-danger">{error}</p>}
 
-      <div className="mb-3">
-        <ExpenseFilter
-          onSelectCategory={(category) => {
-            setSelectedCategory(category);
-          }}
-        />
-      </div>
+      {isLoading && <div className="spinner-border"></div>}
 
-      <ExpenseList
-        expense={filteredExpenses}
-        onDelete={(id) => {
-          setExpenses(expenses.filter((expense) => expense.id !== id));
-        }}
-      />
+      <button className="btn btn-primary mb-3" onClick={addUser}>
+        Add User
+      </button>
+
+      <ul className="list-group">
+        {users.map((user) => (
+          <li
+            key={user.id}
+            className="list-group-item d-flex justify-content-between"
+          >
+            {user.name}
+            <div>
+              <button
+                className="btn btn-outline-secondary mx-1"
+                onClick={() => {
+                  updateCurrentUser(user);
+                }}
+              >
+                Update
+              </button>
+              <button
+                className="btn btn-outline-danger"
+                onClick={() => {
+                  deleteUser(user);
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
