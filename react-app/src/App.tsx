@@ -1,38 +1,9 @@
-import { useEffect, useState } from "react";
-import apiClient, { CanceledError } from "./services/api-client";
-
-interface User {
-  id: number;
-  name: string;
-}
+import userService, { User } from "./services/user-service";
+import useUsers from "./hooks/useUsers";
 
 function App() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [error, setError] = useState("");
-  const [isLoading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    setLoading(true);
-    apiClient
-      .get<User[]>("/users", { signal: controller.signal })
-      .then((response) => {
-        console.log("Fetched users:", response.data[0].name);
-        setUsers(response.data);
-      })
-      .catch((error) => {
-        if (error instanceof CanceledError) return;
-        setError("Error fetching users: " + error.message);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, []);
+  const { users, error, isLoading, setUsers, setError, setLoading } =
+    useUsers();
 
   const addUser = () => {
     const newUser: User = {
@@ -41,8 +12,8 @@ function App() {
     };
 
     setLoading(true);
-    apiClient
-      .post("/users", newUser)
+    const { request, cancel } = userService.create<User>(newUser);
+    request
       .then(({ data: savedUser }) => {
         console.log("User added:", savedUser.name);
         setUsers([...users, savedUser]);
@@ -53,12 +24,16 @@ function App() {
       .finally(() => {
         setLoading(false);
       });
+
+    return () => {
+      cancel();
+    };
   };
 
   const deleteUser = (user: User) => {
     setLoading(true);
-    apiClient
-      .delete(`/users/${user.id}`)
+    const { request, cancel } = userService.delete(user.id);
+    request
       .then(() => {
         setUsers(users.filter((u) => u.id !== user.id));
       })
@@ -68,14 +43,18 @@ function App() {
       .finally(() => {
         setLoading(false);
       });
+
+    return () => {
+      cancel();
+    };
   };
 
   const updateCurrentUser = (user: User) => {
     const updatedUser: User = { ...user, name: user.name + " (Updated)" };
 
     setLoading(true);
-    apiClient
-      .patch(`/users/${user.id}`, updatedUser)
+    const { request, cancel } = userService.update(updatedUser);
+    request
       .then(({ data: savedUser }) => {
         setUsers(users.map((u) => (u.id === user.id ? savedUser : u)));
       })
@@ -85,6 +64,10 @@ function App() {
       .finally(() => {
         setLoading(false);
       });
+
+    return () => {
+      cancel();
+    };
   };
 
   return (
